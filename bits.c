@@ -218,7 +218,7 @@ int bang(int x) {
 	x = (x >> 1) | x;
 	return ~x & 0x0000001;
 }
-// find the conjunction of every bit of x by bisecting it step-by-step
+// find the conjunction among every bit of x by bisecting x step-by-step
 // if the final result is 1, it means there exists 1 in x, thus return 0; otherwise return 1
 
 /*
@@ -270,6 +270,15 @@ int divpwr2(int x, int n) {
 	int bias = sign&mask;
 	return (x + bias) >> n;
 }
+// Tip: The difference between round-to-zero and round-to-negative emerges ONLY when:
+//	    the number is negative and its fractional part is not 0.
+// e.g. -1.001 = -1 (round-to-zero)  -1.001 = -2 (round-to-negative)
+// Simply right-shift a negative number is equivalent to round-to-negative.
+// Thus for negative numbers it is necessary to first check whether the bits to be rounded are all 0.
+// If it is not all 0, add 1 to the least significant bit.
+// The method is to simply add them by a bias number of n bits of 1's.
+// For non-negative numbers the bias number should be 0.
+
 /*
 * negate - return -x
 *   Example: negate(1) = -1.
@@ -280,6 +289,8 @@ int divpwr2(int x, int n) {
 int negate(int x) {
 	return ~x + 1;
 }
+// Tip: 2's-c int
+
 /*
 * isPositive - return 1 if x > 0, return 0 otherwise
 *   Example: isPositive(-1) = 0.
@@ -290,6 +301,9 @@ int negate(int x) {
 int isPositive(int x) {
 	return (!(x >> 31))&(!!(x ^ 0));
 }
+// MSB = 0   -> x is positive or zero
+// !!(x^0)=1 -> x is not zero
+
 /*
 * isLessOrEqual - if x <= y  then return 1, else return 0
 *   Example: isLessOrEqual(4,5) = 1.
@@ -300,12 +314,17 @@ int isPositive(int x) {
 int isLessOrEqual(int x, int y) {
 	int signx = (x >> 31) & 1;
 	int signy = (y >> 31) & 1;
-	int sign = signx&(~signy); // sign is 1 if and only if (signx=1 && signy==0)
-	int dif = x + (~y + 1);      // the sign bit of dif should be 1 if x<y, but it could fail when (x<0&&y>0) or (x>0&&y<0) by overflow
-	dif = ((dif >> 31) & 1)&(!(signx^signy)); //dif is 1 if and only if (x-y>0&&signx==signy)
-											  //int isequal=!(x^y);  // judging whether x==y
+	int sign = signx&(~signy); 
+	int dif = x + (~y + 1);      
+	dif = ((dif >> 31) & 1)&(!(signx^signy)); 						  
 	return sign | dif | (!(x^y));
 }
+// three cases in which this function should return 1: "(x-y<0 && signx==signy)", "(signx=1 && signy=0)", "(x==y)"
+// "sign" is 1 if and only if "(signx=1 && signy==0)", in this case "x" is definitely smaller than "y".
+// the sign bit of "dif" should be 1 if "(x<y)", but it could fail when "(x<0&&y>0)" or "(x>0&&y<0)" by overflow.
+// "dif" is 1 if and only if "(x-y<0&&signx==signy)"
+// !(x^y) judges whether x==y
+
 /*
 * ilog2 - return floor(log base 2 of x), where x > 0
 *   Example: ilog2(16) = 4
@@ -335,6 +354,10 @@ int ilog2(int x) {
 
 	return shift1 + shift2 + shift4 + shift8 + shift16;
 }
+// "shift16" marks whether there is 1 in the first 16 bits. similar for "shiftxx".
+// if there is, right-shift x by the bits it recorded to cancel out the low bits,
+// until the precision is down to 1.
+
 /*
 * float_neg - Return bit-level equivalent of expression -f for
 *   floating point argument f.
@@ -352,6 +375,8 @@ unsigned float_neg(unsigned uf) {
 	if (frac&&exp) return uf;
 	else return uf ^ 0x80000000;
 }
+// Tip: IEEE754 standard of single precision floating point value.
+
 /*
 * float_i2f - Return bit-level equivalent of expression (float) x
 *   Result is returned as unsigned int, but
@@ -363,22 +388,22 @@ unsigned float_neg(unsigned uf) {
 */
 unsigned float_i2f(int x) {
 	int sign = x & 0x80000000, MSB = 0, flag = 0;
-	int roundbits, keybit, evenbit;
+	int roundbits, fracbit, LSB;
 	if (x == 0) return x;
 	if (sign) x = -x;
 	while (!((x << MSB) & 0x80000000)) MSB++;
 	if (MSB >= 8) x = x << (MSB - 8);
-	else //round to nearest even
+	else 
 	{
-		keybit = 1 << (7 - MSB);
-		evenbit = keybit << 1;
-		roundbits = (evenbit - 1)&x;
-		if (roundbits == keybit)
+		fracbit = 1 << (7 - MSB);
+		LSB = fracbit << 1;
+		roundbits = (LSB - 1)&x;
+		if (roundbits == fracbit)
 		{
-			if (x&evenbit) flag = 1;
+			if (x&LSB) flag = 1;
 		}
-		else if (roundbits>keybit) flag = 1;
-		if (flag) x += evenbit;
+		else if (roundbits>fracbit) flag = 1;
+		if (flag) x += LSB;
 		if ((x << (MSB - 1)) & 0x80000000) MSB--;
 		x = x >> (8 - MSB);
 	}
@@ -387,6 +412,15 @@ unsigned float_i2f(int x) {
 	x = x | sign;
 	return x;
 }
+// Tip: When there is lost precision, round to nearest even.
+// Round-to-even is the default method because it guarantees statistically the rounding does not 
+// cause any bias among sample values.
+// Round-to-even is ONLY different from half-round when the integer part is even and the fractional part is 0.5
+// e.g. 2.5 = 2 (round to even) 2.5 = 3 (half round) 1.5 = 2 (both round to even and half round)
+// In terms of binary representation, first check whether the bits to be rounded is equal to 1000..
+// If true, check whether the least significant bit is 1, if also true, add it by 1
+// Or if "roundbits" is simply larger than 1000..., also we should add LSB by 1
+
 /*
 * float_twice - Return bit-level equivalent of expression 2*f for
 *   floating point argument f.
@@ -415,4 +449,6 @@ unsigned float_twice(unsigned uf) {
 		return uf;
 	}
 }
+// Tip: IEEE754 for NaN: exp is all 1 but frac is not 0
+
 
